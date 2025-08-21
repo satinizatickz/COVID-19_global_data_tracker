@@ -1,0 +1,223 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 📝 COVID-19 Global Data Tracker\n",
+    "\n",
+    "This notebook analyzes global COVID-19 trends using the **Our World in Data** dataset. You will:\n",
+    "- Load & clean data\n",
+    "- Explore trends in cases, deaths, and vaccinations\n",
+    "- Compare countries/regions\n",
+    "- Create charts (and optional maps)\n",
+    "- Write insights and export a report\n",
+    "\n",
+    "> **Data file required:** Place `owid-covid-data.csv` in the same folder as this notebook before running."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# === Imports & Config ===\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "# Optional styling\n",
+    "# import seaborn as sns\n",
+    "# sns.set_theme()\n",
+    "\n",
+    "pd.set_option(\"display.max_columns\", 0)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1) Data Collection\n",
+    "\n",
+    "- Download `owid-covid-data.csv` from Our World in Data.\n",
+    "- Save it to the same directory as this notebook."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# === Data Loading & Exploration ===\n",
+    "DATA_PATH = \"owid-covid-data.csv\"\n",
+    "\n",
+    "df = pd.read_csv(DATA_PATH)\n",
+    "display(df.head())\n",
+    "print(\"\\nShape:\", df.shape)\n",
+    "print(\"\\nColumns:\", list(df.columns))\n",
+    "\n",
+    "df.isna().sum().sort_values(ascending=False).head(20)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2) Data Cleaning"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['date'] = pd.to_datetime(df['date'], errors='coerce')\n",
+    "\n",
+    "# Keep only countries (iso_code length = 3)\n",
+    "df = df[df['iso_code'].str.len() == 3].copy()\n",
+    "\n",
+    "# Countries of interest\n",
+    "countries = [\"Kenya\", \"United States\", \"India\"]\n",
+    "df_sel = df[df['location'].isin(countries)].copy()\n",
+    "\n",
+    "# Fill numeric columns forward within each country\n",
+    "num_cols = [\n",
+    "    \"total_cases\", \"new_cases\", \"total_deaths\", \"new_deaths\",\n",
+    "    \"total_vaccinations\", \"people_vaccinated\", \"people_fully_vaccinated\",\n",
+    "    \"total_boosters\", \"population\"\n",
+    "]\n",
+    "for col in num_cols:\n",
+    "    if col in df_sel.columns:\n",
+    "        df_sel[col] = df_sel.groupby('location')[col].ffill()\n",
+    "\n",
+    "df_sel = df_sel.dropna(subset=['date']).sort_values(['location','date']).reset_index(drop=True)\n",
+    "df_sel.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3) Exploratory Data Analysis (EDA)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def add_rolling_means(frame, window=7):\n",
+    "    for col in [\"new_cases\", \"new_deaths\"]:\n",
+    "        if col in frame.columns:\n",
+    "            frame[f\"{col}_ra{window}\"] = frame.groupby('location')[col].transform(\n",
+    "                lambda s: s.rolling(window, min_periods=1).mean()\n",
+    "            )\n",
+    "    return frame\n",
+    "\n",
+    "df_sel = add_rolling_means(df_sel)\n",
+    "\n",
+    "df_sel[\"death_rate\"] = df_sel[\"total_deaths\"] / df_sel[\"total_cases\"]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Plot total cases\n",
+    "plt.figure()\n",
+    "for c in countries:\n",
+    "    tmp = df_sel[df_sel['location']==c]\n",
+    "    plt.plot(tmp['date'], tmp['total_cases'], label=c)\n",
+    "plt.title(\"Total COVID-19 Cases Over Time\")\n",
+    "plt.xlabel(\"Date\"); plt.ylabel(\"Total cases\")\n",
+    "plt.legend(); plt.tight_layout(); plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Plot total deaths\n",
+    "plt.figure()\n",
+    "for c in countries:\n",
+    "    tmp = df_sel[df_sel['location']==c]\n",
+    "    plt.plot(tmp['date'], tmp['total_deaths'], label=c)\n",
+    "plt.title(\"Total COVID-19 Deaths Over Time\")\n",
+    "plt.xlabel(\"Date\"); plt.ylabel(\"Total deaths\")\n",
+    "plt.legend(); plt.tight_layout(); plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Daily new cases (7-day avg)\n",
+    "plt.figure()\n",
+    "for c in countries:\n",
+    "    tmp = df_sel[df_sel['location']==c]\n",
+    "    plt.plot(tmp['date'], tmp['new_cases_ra7'], label=c)\n",
+    "plt.title(\"Daily New Cases (7-day rolling avg)\")\n",
+    "plt.xlabel(\"Date\"); plt.ylabel(\"New cases\")\n",
+    "plt.legend(); plt.tight_layout(); plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4) Vaccination Progress"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.figure()\n",
+    "for c in countries:\n",
+    "    tmp = df_sel[df_sel['location']==c]\n",
+    "    if \"total_vaccinations\" in tmp:\n",
+    "        plt.plot(tmp['date'], tmp['total_vaccinations'], label=c)\n",
+    "plt.title(\"Cumulative Vaccinations Over Time\")\n",
+    "plt.xlabel(\"Date\"); plt.ylabel(\"Total vaccinations\")\n",
+    "plt.legend(); plt.tight_layout(); plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5) Insights & Reporting\n",
+    "\n",
+    "- Which countries had the steepest rises in cases/deaths?\n",
+    "- Which rolled out vaccines fastest?\n",
+    "- Any anomalies or gaps?\n",
+    "\n",
+    "> Export this notebook as PDF or include visuals in a presentation."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
